@@ -1,0 +1,7 @@
+device_id,location,ip,rssi,uptime_s,fw,sensor_ok,sensor_failures,echo_idle,last_seen_age,online
+BIN-A1,Cafeteria Entrance,192.168.1.21,-58,414200,1.4.2,True,0,0,8.0,True
+BIN-B2,Library Lobby,192.168.1.22,-63,288050,1.4.2,True,0,0,13.0,True
+BIN-C3,Hostel Block C,192.168.1.23,-71,512900,1.4.2,True,0,0,5.0,True
+BIN-D4,Admin Gate,192.168.1.24,-55,98740,1.4.2,True,0,0,10.0,True
+BIN-E5,Sports Complex,192.168.1.25,-68,751300,1.4.2,True,0,0,2.0,True
+BIN-F6,Parking Lot,192.168.1.26,-82,36120,1.4.1,False,7,1,1069.0,False

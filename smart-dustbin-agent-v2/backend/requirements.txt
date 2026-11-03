@@ -1,0 +1,12 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-dotenv==1.0.1
+sqlalchemy==2.0.38
+apscheduler==3.11.0
+python-multipart==0.0.20
+langgraph==0.2.74
+langchain-core==0.3.40
+langchain-groq==0.2.4
+groq==0.18.0
+twilio==9.4.6
