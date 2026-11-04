@@ -3,10 +3,12 @@ uvicorn[standard]==0.34.0
 httpx==0.28.1
 python-dotenv==1.0.1
 sqlalchemy==2.0.38
+psycopg2-binary==2.9.10
 apscheduler==3.11.0
 python-multipart==0.0.20
-langgraph==0.2.74
-langchain-core==0.3.40
-langchain-groq==0.2.4
-groq==0.18.0
+langgraph==1.2.0
+langchain-core==1.4.0
+# langchain-groq < 1.0 has no reasoning_effort parameter, which gpt-oss needs.
+langchain-groq==1.1.2
+groq==0.37.1
 twilio==9.4.6

@@ -10,6 +10,7 @@ from .db import Base, engine, get_db, SessionLocal
 from .models import BinReading, Alert, Event
 from .services.sample_data import load_sample
 from .services.poller import start_poller, stop_poller, poll_once
+from .services.stream import start_stream, stop_stream, stream_state
 from .services.monitoring import process_reading
 from .agents.conversation_graph import conversation_graph
 from .config import settings
@@ -22,8 +23,12 @@ async def lifespan(app: FastAPI):
         load_sample(db)
     finally:
         db.close()
-    start_poller(settings.poll_interval_seconds)
+    # The stream is the primary feed; polling is the fallback when it is disabled.
+    streaming = start_stream()
+    if not streaming:
+        start_poller(settings.poll_interval_seconds)
     yield
+    await stop_stream()
     stop_poller()
 
 app = FastAPI(title="Smart Dustbin Voice Agent API", version="1.0.0", lifespan=lifespan)
@@ -124,6 +129,10 @@ def reset(req: ResetRequest, db: Session = Depends(get_db)):
 @app.post("/api/poll/run")
 async def run_poll():
     return await poll_once()
+
+@app.get("/api/stream/state")
+def stream_status():
+    return stream_state()
 
 @app.websocket("/ws/updates")
 async def websocket_updates(ws: WebSocket):

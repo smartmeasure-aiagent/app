@@ -1,12 +1,60 @@
+import logging, re
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, END
 from ..config import settings
+
+log = logging.getLogger(__name__)
 
 class ConversationState(TypedDict, total=False):
     question: str
     answer: str
     bins: list[dict]
     tool_result: Any
+
+def speakable(text: str) -> str:
+    """Strip markdown and exotic Unicode that text-to-speech and consoles handle badly."""
+    text = re.sub(r"[*_`#]+", "", text)
+    for dash in ("‑", "–", "—"):
+        text = text.replace(dash, "-")
+    # Narrow/non-breaking spaces appear in model output and break cp1252 terminals.
+    text = re.sub(r"[     ]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+def phrase_with_llm(question: str, verified: str) -> str:
+    """Reword the verified answer. Returns `verified` unchanged on any failure.
+
+    The deterministic answer is the source of truth: the model only rephrases it,
+    and is never allowed to replace it with empty or unusable output.
+    """
+    try:
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import SystemMessage, HumanMessage
+        llm = ChatGroq(
+            model=settings.groq_chat_model,
+            temperature=0,
+            api_key=settings.groq_api_key,
+            max_tokens=settings.groq_max_tokens,
+            reasoning_effort=settings.groq_reasoning_effort,
+        )
+        prompt = (
+            "Answer the user's smart dustbin question using ONLY the supplied verified data. "
+            "Do not invent bin readings. Keep it to one or two short sentences of plain "
+            "spoken English, with no markdown, lists or symbols.\n"
+            f"Question: {question}\nVerified result: {verified}"
+        )
+        reply = llm.invoke([
+            SystemMessage(content="You are a smart dustbin voice assistant."),
+            HumanMessage(content=prompt),
+        ])
+        # A reasoning model can exhaust its token budget before emitting content.
+        spoken = speakable(reply.content or "")
+        if not spoken:
+            log.warning("Groq returned no content; using the verified answer verbatim.")
+            return verified
+        return spoken
+    except Exception:
+        log.warning("Groq phrasing failed; using the verified answer verbatim.", exc_info=True)
+        return verified
 
 def build_conversation_graph():
     def retrieve(state: ConversationState):
@@ -31,18 +79,7 @@ def build_conversation_graph():
         else:
             answer = "I can check bin fill levels, bins needing collection, fleet status, and sensor health. What would you like to know?"
         if settings.groq_api_key:
-            try:
-                from langchain_groq import ChatGroq
-                from langchain_core.messages import SystemMessage, HumanMessage
-                llm = ChatGroq(model=settings.groq_chat_model, temperature=0, api_key=settings.groq_api_key)
-                prompt = (
-                    "Answer the user's smart dustbin question using ONLY the supplied verified data. "
-                    "Do not invent bin readings. Keep it concise.\\n"
-                    f"Question: {state.get('question')}\\nVerified result: {answer}"
-                )
-                answer = llm.invoke([SystemMessage(content="You are a smart dustbin voice assistant."), HumanMessage(content=prompt)]).content
-            except Exception:
-                pass
+            answer = phrase_with_llm(state.get("question", ""), answer)
         return {"answer": answer}
 
     graph = StateGraph(ConversationState)
