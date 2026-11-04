@@ -10,6 +10,7 @@ def csv_env(name: str):
 
 class Settings:
     app_env = os.getenv("APP_ENV", "development")
+    log_level = os.getenv("LOG_LEVEL", "INFO")
     database_url = os.getenv("DATABASE_URL", "sqlite:///./smart_dustbin.db")
     poll_interval_seconds = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
     upstream_api_base_url = os.getenv("UPSTREAM_API_BASE_URL", "").rstrip("/")

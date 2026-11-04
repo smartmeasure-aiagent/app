@@ -5,7 +5,7 @@ from sqlalchemy import select, desc
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-import tempfile, os
+import tempfile, os, logging
 from .db import Base, engine, get_db, SessionLocal
 from .models import BinReading, Alert, Event
 from .services.sample_data import load_sample
@@ -15,8 +15,21 @@ from .services.monitoring import process_reading
 from .agents.conversation_graph import conversation_graph
 from .config import settings
 
+def configure_logging():
+    """Make ingest activity visible on the console. Without this, the stream
+    consumer's INFO messages are swallowed and the server looks idle."""
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # httpx logs a line per request, which is pure noise against a 2s feed.
+    for noisy in ("httpx", "httpcore", "apscheduler.executors.default"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

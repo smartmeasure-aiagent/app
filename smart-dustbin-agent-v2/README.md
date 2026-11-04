@@ -72,6 +72,28 @@ PERSIST_HEARTBEAT_SECONDS=300
 - Because duplicates are dropped, the "2 consecutive readings >= 80%" rule counts two consecutive *distinct* readings.
 - `GET /api/stream/state` reports whether the consumer is connected and which bins it has seen.
 
+## 3c. Watching the data arrive
+The backend logs every stored reading at `INFO`, so the console is the fastest way to confirm ingest:
+```
+13:15:16 INFO  app.services.stream: status BIN-SIM-01  99.0% FULL - COLLECT NOW  OFFLINE/FAULT
+13:15:18 INFO  app.services.notifications: EMAIL DEMO: [CRITICAL] Smart Dustbin Alert | ...
+13:15:28 INFO  app.services.stream: status BIN-SIM-01   0.0% WAITING             online
+```
+Only *changed* readings are logged, because only those are stored. Set `LOG_LEVEL=DEBUG` to also see the suppressed duplicates, or `LOG_LEVEL=WARNING` for a quiet console.
+
+Other views, in increasing order of detail:
+```bash
+curl http://localhost:8000/api/stream/state   # is the consumer connected?
+curl http://localhost:8000/api/status         # current reading per bin
+curl http://localhost:8000/api/alerts         # alert records
+curl http://localhost:8000/api/events         # THRESHOLD_ALERT / ALERT_RECOVERED / RESET
+```
+The dashboard at http://localhost:5173 refreshes every 5 seconds. To watch the upstream feed raw, bypassing this backend entirely:
+```bash
+curl -N "$UPSTREAM_API_BASE_URL/api/voice/stream?interval=2" -H "x-api-key: $UPSTREAM_API_KEY"
+```
+If nothing changes, the device is idle — run `simulator.py` on the upstream host to generate fill cycles.
+
 ## 4. Configure Groq
 Set `GROQ_API_KEY` in `.env`. The default chat model is `openai/gpt-oss-120b`; speech transcription uses `whisper-large-v3-turbo`. Set `GROQ_CHAT_MODEL` to use a different model.
 ```env

@@ -49,12 +49,14 @@ async def handle_event(event, payload):
     now = asyncio.get_running_loop().time()
     fresh = [r for r in rows if _should_persist(r, now)]
     if not fresh:
+        log.debug("%s event: no change for %s", event, ", ".join(r["bin_id"] for r in rows))
         return 0
     # process_reading is blocking (database + notifications), so keep it off the loop.
     await asyncio.to_thread(_persist, fresh)
     for row in fresh:
         _last_persisted[row["bin_id"]] = (_signature(row), now)
-    log.info("Stream %s event stored %d reading(s)", event, len(fresh))
+        log.info("%-6s %s %5.1f%% %-20s %s", event, row["bin_id"], row["fill"], row["status"],
+                 "online" if row["online"] and row["sensor_ok"] else "OFFLINE/FAULT")
     return len(fresh)
 
 async def _consume():
