@@ -1,7 +1,0 @@
-device_id,location,fill,distance_cm,status,alert,online,sensor_ok,updated,ts
-BIN-A1,Cafeteria Entrance,92,4.8,FULL - COLLECT NOW,True,True,True,14:09:52,1762154384
-BIN-B2,Library Lobby,64,21.6,ALMOST FULL,False,True,True,14:09:47,1762154379
-BIN-C3,Hostel Block C,38,37.2,AVAILABLE,False,True,True,14:09:55,1762154387
-BIN-D4,Admin Gate,85,9.0,FULL - COLLECT NOW,True,True,True,14:09:50,1762154382
-BIN-E5,Sports Complex,12,52.8,AVAILABLE,False,True,True,14:09:58,1762154390
-BIN-F6,Parking Lot,71,17.4,NO RECENT DATA,False,False,False,13:52:11,1762153323

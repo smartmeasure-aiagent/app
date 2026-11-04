@@ -1,6 +1,0 @@
-timestamp,device_id,event,detail
-2026-11-03T13:58:40,BIN-A1,FULL_ALERT,fill 81% (2nd confirmation) -> collect now
-2026-11-03T13:52:11,BIN-F6,SENSOR_FAULT,"7 failed reads, echo idle=1, marked offline"
-2026-11-03T13:40:05,BIN-D4,FULL_ALERT,fill 85% -> collect now
-2026-11-03T11:20:33,BIN-A1,RESET,collected; state cleared via /api/reset
-2026-11-03T09:15:02,BIN-B2,CROSSTALK_REJECT,"reading 1.2 cm < 2.0 cm min, discarded"
