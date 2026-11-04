@@ -46,8 +46,20 @@ def send_twilio_call(body):
     for phone in phones:
         client.calls.create(to=phone, from_=settings.twilio_from_number, twiml=str(response))
 
-def notify_alert(message, severity):
+def twilio_ready():
+    return bool(settings.twilio_account_sid and settings.twilio_auth_token
+                and settings.twilio_from_number and recipients()[1])
+
+def notify_alert(db, message, severity, bin_id=None, fill=None, location=""):
+    """Dispatch an alert. Every alert starts at 80%, so every alert places a call."""
     send_email(f"[{severity.upper()}] Smart Dustbin Alert", message)
     send_twilio_sms(message)
-    if severity in ("high", "critical"):
+    if twilio_ready():
         send_twilio_call(message)
+        channel = "twilio"
+    else:
+        # No telephony: ring the dashboard so the conversation still happens.
+        channel = "browser"
+    if bin_id is not None and fill is not None:
+        from .calls import place_call
+        place_call(db, bin_id, location, float(fill), severity, channel=channel)

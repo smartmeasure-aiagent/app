@@ -1,21 +1,63 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Mic, RefreshCw, Trash2, AlertTriangle, Wifi, WifiOff, MessageCircle} from 'lucide-react';
+import {Mic, RefreshCw, Trash2, AlertTriangle, Wifi, WifiOff, MessageCircle,
+        Phone, PhoneOff, PhoneCall, Volume2} from 'lucide-react';
 import './style.css';
 
 const API = 'http://localhost:8000';
+
+// Browsers only allow speech after a user gesture, which is why a call must be
+// answered before the agent talks.
+function speak(text, onDone){
+  try{
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang='en-IN'; u.rate=1.02;
+    u.onend = onDone; u.onerror = onDone;
+    window.speechSynthesis.speak(u);
+  }catch(e){ onDone?.() }
+}
+function listen(onText, onErr){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ onErr?.('Speech recognition is not supported in this browser. Type instead.'); return null; }
+  const rec = new SR();
+  rec.lang='en-IN'; rec.interimResults=false; rec.maxAlternatives=1;
+  rec.onresult = e => onText(e.results[0][0].transcript);
+  rec.onerror = e => onErr?.(e.error === 'not-allowed'
+    ? 'Microphone permission denied.' : `Could not hear you (${e.error}).`);
+  rec.start();
+  return rec;
+}
 function App(){
   const [bins,setBins]=useState([]), [alerts,setAlerts]=useState([]), [question,setQuestion]=useState('');
   const [answer,setAnswer]=useState('Ask me about bin fill levels, collection status, or sensor health.');
   const [busy,setBusy]=useState(false), [err,setErr]=useState('');
+  const [call,setCall]=useState(null);           // the ringing or connected call
+  const [callNote,setCallNote]=useState('');     // status line inside the dialler
+  const [reply,setReply]=useState('');           // what the operator types back
+  const [callBusy,setCallBusy]=useState(false), [hearing,setHearing]=useState(false);
+  const [declined,setDeclined]=useState([]);     // ids dismissed in this session
   async function refresh(){
     try{
-      const [s,a]=await Promise.all([fetch(API+'/api/status'),fetch(API+'/api/alerts')]);
-      if(!s.ok||!a.ok) throw new Error('Backend request failed');
-      setBins((await s.json()).bins||[]); setAlerts((await a.json()).alerts||[]); setErr('');
+      const [s,a,c]=await Promise.all([fetch(API+'/api/status'),fetch(API+'/api/alerts'),
+                                       fetch(API+'/api/calls/active')]);
+      if(!s.ok||!a.ok||!c.ok) throw new Error('Backend request failed');
+      setBins((await s.json()).bins||[]); setAlerts((await a.json()).alerts||[]);
+      const live=(await c.json()).calls||[];
+      setCall(prev=>{
+        // Keep the connected call we are already on; otherwise pick up a new ring.
+        if(prev && prev.state==='active'){
+          const still=live.find(x=>x.id===prev.id);
+          if(!still){ setCallNote('The bin no longer needs collection. Call ended.'); return null; }
+          return prev;
+        }
+        return live.find(x=>x.state==='active') ||
+               live.find(x=>x.state==='ringing' && !declined.includes(x.id)) || null;
+      });
+      setErr('');
     }catch(e){setErr('Cannot reach backend. Start FastAPI on port 8000.');}
   }
-  useEffect(()=>{refresh(); const t=setInterval(refresh,5000); return ()=>clearInterval(t)},[]);
+  useEffect(()=>{refresh(); const t=setInterval(refresh,5000); return ()=>clearInterval(t)},[declined]);
   const high=bins.filter(b=>b.fill>=80).length, offline=bins.filter(b=>!b.online||!b.sensor_ok).length;
   async function ask(e){e?.preventDefault(); if(!question.trim())return; setBusy(true);
     try{const r=await fetch(API+'/api/voice/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:question})}); const d=await r.json(); if(!r.ok)throw new Error(d.detail||'Request failed'); setAnswer(d.answer);}
@@ -26,6 +68,41 @@ function App(){
     const r=await fetch(API+'/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bin_id:id,confirmed:true})});
     const d=await r.json(); if(!r.ok)alert(d.detail||'Reset failed'); refresh();
   }
+  async function answerCall(){
+    setCallBusy(true); setCallNote('Connecting…');
+    try{
+      const r=await fetch(`${API}/api/calls/${call.id}/answer`,{method:'POST'});
+      const d=await r.json(); if(!r.ok) throw new Error(d.detail||'Could not answer');
+      setCall(d); setCallNote('Agent speaking…');
+      speak(d.opening_line, ()=>setCallNote('Your turn — tap the mic or type a reply.'));
+    }catch(e){ setCallNote(e.message) } finally{ setCallBusy(false) }
+  }
+  async function declineCall(){
+    const id=call.id; setDeclined(d=>[...d,id]); setCall(null); window.speechSynthesis?.cancel();
+    await fetch(`${API}/api/calls/${id}/end?reason=declined`,{method:'POST'}).catch(()=>{});
+    refresh();
+  }
+  async function hangUp(){
+    const id=call.id; setCall(null); setCallNote(''); window.speechSynthesis?.cancel();
+    await fetch(`${API}/api/calls/${id}/end?reason=ended`,{method:'POST'}).catch(()=>{});
+    refresh();
+  }
+  async function sayToCall(text){
+    if(!text.trim()||!call) return;
+    setReply(''); setCallBusy(true); setCallNote('Agent thinking…');
+    try{
+      const r=await fetch(`${API}/api/calls/${call.id}/say`,{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+      const d=await r.json(); if(!r.ok) throw new Error(d.detail||'Call turn failed');
+      setCall(d.call); setCallNote('Agent speaking…');
+      speak(d.reply, ()=>setCallNote('Your turn — tap the mic or type a reply.'));
+    }catch(e){ setCallNote(e.message) } finally{ setCallBusy(false) }
+  }
+  function micToCall(){
+    setHearing(true); setCallNote('Listening…');
+    listen(t=>{ setHearing(false); sayToCall(t) },
+           m=>{ setHearing(false); setCallNote(m) });
+  }
   async function voice(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR){alert('Speech recognition is not supported in this browser. Type your question instead.');return;}
@@ -34,6 +111,40 @@ function App(){
   return <main className="shell">
     <header><div><p className="eyebrow">OPERATIONS CONSOLE</p><h1>Smart Dustbin <span>Voice Agent</span></h1><p className="sub">Live fleet monitoring · proactive collection alerts · voice assistant</p></div><button className="refresh" onClick={refresh}><RefreshCw size={16}/> Refresh</button></header>
     {err&&<div className="error">{err}</div>}
+    {call&&<div className="callwrap">
+      <div className={`dialler ${call.state}`}>
+        {call.state==='ringing'?<>
+          <div className="ringing"><span className="pulse"><PhoneCall size={26}/></span></div>
+          <p className="eyebrow">INCOMING AUTOMATED CALL</p>
+          <h2>{call.bin_id} needs collection</h2>
+          <p className="sub">{call.location||'Location not reported'} · {Math.round(call.fill)}% full · {call.severity.toUpperCase()}</p>
+          <p className="callhint">The agent will read the alert aloud and answer your questions.</p>
+          <div className="callbtns">
+            <button className="answer" onClick={answerCall} disabled={callBusy}><Phone size={16}/> Answer</button>
+            <button className="decline" onClick={declineCall}><PhoneOff size={16}/> Decline</button>
+          </div>
+        </>:<>
+          <div className="callhead">
+            <div><p className="eyebrow">ON CALL · {call.bin_id}</p>
+              <h2>{Math.round(call.fill)}% full</h2>
+              <p className="sub">{call.location||'Location not reported'}</p></div>
+            <button className="decline" onClick={hangUp}><PhoneOff size={16}/> End call</button>
+          </div>
+          <div className="transcript">
+            {call.transcript.map((t,i)=><div key={i} className={`turn ${t.role}`}>
+              <small>{t.role==='agent'?'Agent':'You'}</small><p>{t.text}</p></div>)}
+          </div>
+          <div className="callstatus"><Volume2 size={14}/> {callNote||'Connected.'}</div>
+          <form className="callform" onSubmit={e=>{e.preventDefault(); sayToCall(reply)}}>
+            <input value={reply} onChange={e=>setReply(e.target.value)}
+                   placeholder="Type a reply, or use the mic" disabled={callBusy}/>
+            <button type="button" className={`mic ${hearing?'hot':''}`} onClick={micToCall}
+                    disabled={callBusy}><Mic size={17}/></button>
+            <button disabled={callBusy||!reply.trim()}>Send</button>
+          </form>
+        </>}
+      </div>
+    </div>}
     <section className="metrics">
       <div className="metric"><small>Total bins</small><strong>{bins.length}</strong><span>Registered devices</span></div>
       <div className="metric"><small>Needs collection</small><strong>{high}</strong><span>At least 80% full</span></div>

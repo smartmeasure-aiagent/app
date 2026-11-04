@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from ..models import BinReading, Alert, Event, ThresholdState
 from ..agents.monitoring_graph import monitoring_graph
 from .notifications import notify_alert
+from .calls import hang_up_for_bin
 
 def process_reading(db, row):
     db.add(BinReading(**row))
@@ -31,12 +32,14 @@ def process_reading(db, row):
         state.alert_open = True
         state.last_severity = severity
         db.flush()
-        notify_alert(message, severity)
+        notify_alert(db, message, severity, bin_id=row["bin_id"], fill=fill,
+                     location=row.get("location", ""))
     elif fill < 75 and state.alert_open:
         state.alert_open = False
         state.last_severity = "normal"
         state.consecutive_high = 0
         db.add(Event(bin_id=row["bin_id"], event="ALERT_RECOVERED", detail="Fill level dropped below 75%."))
+        hang_up_for_bin(db, row["bin_id"])
     db.commit()
 
 def mark_stale_bins(db):

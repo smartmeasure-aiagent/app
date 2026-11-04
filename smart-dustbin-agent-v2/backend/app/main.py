@@ -12,6 +12,7 @@ from .services.sample_data import load_sample
 from .services.poller import start_poller, stop_poller, poll_once
 from .services.stream import start_stream, stop_stream, stream_state
 from .services.monitoring import process_reading
+from .services import calls
 from .agents.conversation_graph import conversation_graph
 from .config import settings
 
@@ -146,6 +147,39 @@ async def run_poll():
 @app.get("/api/stream/state")
 def stream_status():
     return stream_state()
+
+@app.get("/api/calls/active")
+def calls_active(db: Session = Depends(get_db)):
+    """Calls currently ringing or connected. The dashboard polls this to pop the dialler."""
+    return {"calls": calls.active_calls(db)}
+
+@app.get("/api/calls")
+def calls_recent(db: Session = Depends(get_db)):
+    return {"calls": calls.recent_calls(db)}
+
+@app.post("/api/calls/{call_id}/answer")
+def call_answer(call_id: int, db: Session = Depends(get_db)):
+    call = calls.get_call(db, call_id)
+    if not call:
+        raise HTTPException(404, "Call not found")
+    return calls.answer_call(db, call)
+
+@app.post("/api/calls/{call_id}/say")
+def call_say(call_id: int, req: QueryRequest, db: Session = Depends(get_db)):
+    call = calls.get_call(db, call_id)
+    if not call:
+        raise HTTPException(404, "Call not found")
+    try:
+        return calls.speak_turn(db, call, req.text, latest_bins(db))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+@app.post("/api/calls/{call_id}/end")
+def call_end(call_id: int, reason: str = "ended", db: Session = Depends(get_db)):
+    call = calls.get_call(db, call_id)
+    if not call:
+        raise HTTPException(404, "Call not found")
+    return calls.end_call(db, call, reason)
 
 @app.websocket("/ws/updates")
 async def websocket_updates(ws: WebSocket):

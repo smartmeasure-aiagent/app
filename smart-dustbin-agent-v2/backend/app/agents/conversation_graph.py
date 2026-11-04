@@ -20,7 +20,35 @@ def speakable(text: str) -> str:
     text = re.sub(r"[     ]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
-def phrase_with_llm(question: str, verified: str) -> str:
+def verified_answer(question: str, bins: list[dict]) -> str:
+    """Compute the answer from database rows. This is the source of truth."""
+    q = (question or "").lower()
+    if "offline" in q or "sensor" in q:
+        offline = [b for b in bins if not b.get("online", True) or not b.get("sensor_ok", True)]
+        return "No offline sensors found." if not offline else "Offline or unhealthy sensors: " + ", ".join(
+            f"{b['bin_id']} ({b.get('location','')})" for b in offline
+        )
+    if any(k in q for k in ["collected", "emptied", "done", "cleared"]):
+        return ("Thank you. Please confirm the collection on the dashboard so the bin "
+                "is reset and the alert is closed.")
+    if any(k in q for k in ["more than", "above", "over", "full", "collect", "80"]):
+        full = [b for b in bins if float(b.get("fill", 0)) >= 80]
+        return "No bins are currently at or above 80%." if not full else (
+            f"{len(full)} bin(s) are at or above 80%: " + "; ".join(
+                f"{b['bin_id']} at {b.get('location','')} is {b['fill']}% full" for b in full
+            )
+        )
+    return ("I can check bin fill levels, bins needing collection, fleet status, "
+            "and sensor health. What would you like to know?")
+
+def answer_question(question: str, bins: list[dict], context: str = "") -> str:
+    """Answer one turn. `context` names the bin a call is about, if any."""
+    answer = verified_answer(question, bins)
+    if settings.groq_api_key:
+        answer = phrase_with_llm(question, answer, context)
+    return answer
+
+def phrase_with_llm(question: str, verified: str, context: str = "") -> str:
     """Reword the verified answer. Returns `verified` unchanged on any failure.
 
     The deterministic answer is the source of truth: the model only rephrases it,
@@ -40,10 +68,14 @@ def phrase_with_llm(question: str, verified: str) -> str:
             "Answer the user's smart dustbin question using ONLY the supplied verified data. "
             "Do not invent bin readings. Keep it to one or two short sentences of plain "
             "spoken English, with no markdown, lists or symbols.\n"
-            f"Question: {question}\nVerified result: {verified}"
+            + (f"Call context: {context}\n" if context else "")
+            + f"Question: {question}\nVerified result: {verified}"
         )
+        persona = ("You are a smart dustbin voice assistant speaking on a phone call to "
+                   "cleaning staff. Be brief, polite and natural."
+                   if context else "You are a smart dustbin voice assistant.")
         reply = llm.invoke([
-            SystemMessage(content="You are a smart dustbin voice assistant."),
+            SystemMessage(content=persona),
             HumanMessage(content=prompt),
         ])
         # A reasoning model can exhaust its token budget before emitting content.
@@ -62,24 +94,9 @@ def build_conversation_graph():
         return {"tool_result": state.get("bins", [])}
 
     def respond(state: ConversationState):
-        question = state.get("question", "").lower()
-        bins = state.get("tool_result", [])
-        if "offline" in question or "sensor" in question:
-            offline = [b for b in bins if not b.get("online", True) or not b.get("sensor_ok", True)]
-            answer = "No offline sensors found." if not offline else "Offline or unhealthy sensors: " + ", ".join(
-                f"{b['bin_id']} ({b.get('location','')})" for b in offline
-            )
-        elif any(k in question for k in ["more than", "above", "over", "full", "collect", "80"]):
-            full = [b for b in bins if float(b.get("fill", 0)) >= 80]
-            answer = "No bins are currently at or above 80%." if not full else (
-                f"{len(full)} bin(s) are at or above 80%: " + "; ".join(
-                    f"{b['bin_id']} at {b.get('location','')} is {b['fill']}% full" for b in full
-                )
-            )
-        else:
-            answer = "I can check bin fill levels, bins needing collection, fleet status, and sensor health. What would you like to know?"
+        answer = verified_answer(state.get("question", ""), state.get("tool_result", []))
         if settings.groq_api_key:
-            answer = phrase_with_llm(state.get("question", ""), answer)
+            answer = phrase_with_llm(state.get("question", ""), answer, state.get("context", ""))
         return {"answer": answer}
 
     graph = StateGraph(ConversationState)

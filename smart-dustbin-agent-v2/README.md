@@ -116,6 +116,26 @@ GROQ_MAX_TOKENS=512
 - Phone calls use Twilio's built-in TwiML voice message. Groq TTS audio is not automatically inserted into phone calls in this starter.
 - All outbound notifications are disabled unless credentials/recipients are configured. Demo mode logs notification attempts instead of sending them.
 
+## 5b. Automatic collection calls
+When a bin opens an alert (two consecutive readings at or above 80%), the backend **places a call**. Previously calls went out only at 90% and above; now every alert calls, because every alert starts at 80%.
+
+Delivery depends on configuration:
+- **Twilio configured** — the call is dialled on the phone network as before.
+- **Twilio not configured** — the call rings in the dashboard instead, so the conversation still happens. This is the default.
+
+The in-browser call:
+1. A `ringing` call appears within ~5s (the dashboard polls `/api/calls/active`).
+2. The operator presses **Answer**. The browser speaks the opening line — *"Bin BIN A1 at North gate is 84 percent full. Please arrange collection."*
+3. The operator replies by microphone or keyboard. Each turn goes to `POST /api/calls/{id}/say`, is answered by the grounded assistant **with the call's bin as context**, and is read aloud.
+4. **End call** hangs up. The full transcript is stored on the call record.
+
+Behavior worth knowing:
+- Only one live call per bin — a bin that keeps reporting high does not ring repeatedly.
+- Emptying a bin (fill below 75%) ends its live call automatically and logs `CALL_ENDED`.
+- A call left ringing for 3 minutes (`RING_TIMEOUT_SECONDS`) becomes `missed`, so old alerts stop ringing.
+- Declining marks the call missed and suppresses it for that browser session.
+- Speech uses the browser's Web Speech API. Synthesis needs a user gesture, which is why the agent only speaks after **Answer** is pressed. Recognition needs Chrome or Edge; the text box is the fallback everywhere else.
+
 ## 6. API endpoints
 - `GET /api/health`
 - `GET /api/status`
@@ -129,6 +149,11 @@ GROQ_MAX_TOKENS=512
 - `POST /api/reset` JSON `{ "bin_id": "BIN-A1", "confirmed": true }`
 - `POST /api/poll/run` manually trigger upstream poll
 - `GET /api/stream/state` upstream SSE consumer status
+- `GET /api/calls/active` calls ringing or connected now
+- `GET /api/calls` recent call records with transcripts
+- `POST /api/calls/{id}/answer` connect, returns the agent's opening turn
+- `POST /api/calls/{id}/say` JSON `{ "text": "where is this bin?" }`
+- `POST /api/calls/{id}/end?reason=ended` hang up (`reason=declined` marks it missed)
 - `WS /ws/updates`
 
 ## 7. Safety / production notes
