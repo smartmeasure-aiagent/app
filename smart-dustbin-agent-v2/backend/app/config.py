@@ -13,9 +13,17 @@ class Settings:
     log_level = os.getenv("LOG_LEVEL", "INFO")
     # 5173 is `vite dev`, 3031 is `vite preview` (npm start). Both must be allowed
     # or the dashboard's calls to this agent fail CORS and fall back silently.
+    #
+    # CORS compares the Origin header as an exact string, so "localhost",
+    # "127.0.0.1" and a public IP are three different origins even when they
+    # reach the same server. Every host the dashboard is actually opened from
+    # has to be listed. Set PUBLIC_HOST to add a deployment's address, or
+    # CORS_ORIGINS to replace this list outright.
+    public_host = os.getenv("PUBLIC_HOST", "37.27.53.14")
     cors_origins = csv_env("CORS_ORIGINS") or [
-        "http://37.27.53.14:5173", "http://127.0.0.1:5173",
-        "http://37.27.53.14:3031", "http://127.0.0.1:3031",
+        f"http://{host}:{port}"
+        for host in ("localhost", "127.0.0.1", public_host)
+        for port in (5173, 3031)
     ]
     database_url = os.getenv("DATABASE_URL", "sqlite:///./smart_dustbin.db")
     poll_interval_seconds = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
