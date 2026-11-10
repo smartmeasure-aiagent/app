@@ -21,7 +21,7 @@ with client-side simulated live sensor data (BIN-A1 represents the real ESP32 bi
 
 ```bash
 npm install     # first time only
-npm run dev     # start dev server → http://localhost:5173
+npm run dev     # start dev server → http://37.27.53.14:5173
 npm run build   # production build into dist/
 npm run preview # preview the production build
 ```

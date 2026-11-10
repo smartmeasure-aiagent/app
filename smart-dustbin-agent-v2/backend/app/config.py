@@ -14,8 +14,8 @@ class Settings:
     # 5173 is `vite dev`, 3031 is `vite preview` (npm start). Both must be allowed
     # or the dashboard's calls to this agent fail CORS and fall back silently.
     cors_origins = csv_env("CORS_ORIGINS") or [
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:3031", "http://127.0.0.1:3031",
+        "http://37.27.53.14:5173", "http://127.0.0.1:5173",
+        "http://37.27.53.14:3031", "http://127.0.0.1:3031",
     ]
     database_url = os.getenv("DATABASE_URL", "sqlite:///./smart_dustbin.db")
     poll_interval_seconds = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))

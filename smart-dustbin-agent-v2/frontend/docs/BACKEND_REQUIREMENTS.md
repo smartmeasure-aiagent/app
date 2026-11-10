@@ -80,16 +80,16 @@ Optional auto-start on boot: `SYNTH_AUTOSTART=1` (single-bin), `FLEET_AUTOSTART=
 
 ```bash
 # fast demo then stop (single bin)
-curl -X POST localhost:5000/api/sim/start -H 'Content-Type: application/json' \
+curl -X POST 37.27.53.14:5000/api/sim/start -H 'Content-Type: application/json' \
   -d '{"interval":1,"speed":8,"fault_chance":0.02}'
-curl localhost:5000/api/status
-curl -X POST localhost:5000/api/sim/stop
+curl 37.27.53.14:5000/api/status
+curl -X POST 37.27.53.14:5000/api/sim/stop
 
 # busy fleet, dispatch, collect
-curl -X POST localhost:5000/api/fleet/sim/start -H 'Content-Type: application/json' -d '{"interval":2,"surge":3}'
-curl localhost:5000/api/fleet/stats
-curl -X POST localhost:5000/api/fleet/dispatch -H 'Content-Type: application/json' -d '{"bin":"BIN-A1","team":"Team Alpha"}'
-curl -X POST localhost:5000/api/fleet/bins/BIN-A1/collect
+curl -X POST 37.27.53.14:5000/api/fleet/sim/start -H 'Content-Type: application/json' -d '{"interval":2,"surge":3}'
+curl 37.27.53.14:5000/api/fleet/stats
+curl -X POST 37.27.53.14:5000/api/fleet/dispatch -H 'Content-Type: application/json' -d '{"bin":"BIN-A1","team":"Team Alpha"}'
+curl -X POST 37.27.53.14:5000/api/fleet/bins/BIN-A1/collect
 ```
 
 ---
