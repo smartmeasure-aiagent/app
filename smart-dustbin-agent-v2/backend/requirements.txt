@@ -3,7 +3,10 @@ uvicorn[standard]
 httpx
 python-dotenv
 sqlalchemy
-psycopg2-binary
+# psycopg3 publishes wheels for new CPython releases far sooner than
+# psycopg2-binary, which must otherwise compile from source. db.py detects
+# whichever of the two is installed, so either works.
+psycopg[binary]
 apscheduler
 python-multipart
 langgraph
