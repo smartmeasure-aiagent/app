@@ -239,3 +239,85 @@ export function colorFor(str) {
   for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h)
   return `hsl(${Math.abs(h) % 360} 42% 45%)`
 }
+
+/* ------------------------------------------------------------------------- */
+/* Normalizers: upstream payloads -> the shapes these screens already expect. */
+/* Keeping the mapping here means no screen has to know the wire format.      */
+
+// Event/alert titles map to an icon name and a severity key used by EventRow.
+const EV_STYLE = {
+  'Bin full': { k: 'crit', ic: 'alert' },
+  'Collection completed': { k: 'ok', ic: 'truck' },
+  'Collection dispatched': { k: 'acc', ic: 'truck' },
+  'Team dispatched': { k: 'acc', ic: 'truck' },
+  'Sensor reading': { k: 'info', ic: 'sensor' },
+  'Sensor fault': { k: 'warn', ic: 'sensor' },
+  'Low battery': { k: 'warn', ic: 'battery' },
+  'Bin offline': { k: 'mut', ic: 'wifi' },
+}
+const SEV_STYLE = {
+  crit: { k: 'crit', ic: 'alert' }, warn: { k: 'warn', ic: 'alert' },
+  info: { k: 'info', ic: 'sensor' }, ok: { k: 'ok', ic: 'check' },
+}
+const styleFor = (type, sev) =>
+  EV_STYLE[type] || SEV_STYLE[sev] || { k: 'info', ic: 'sensor' }
+
+// Upstream timestamps are unix seconds (float); the UI works in milliseconds.
+const toMs = (ts) => (typeof ts === 'number' ? Math.round(ts * 1000) : Date.now())
+
+export function normalizeEvents(rows) {
+  if (!Array.isArray(rows)) return []
+  return rows.map((e) => {
+    const s = styleFor(e.type, e.severity)
+    // The upstream `icon` field is an emoji; EventRow needs an icon name, so it
+    // is derived from the event type instead of passed through.
+    return { id: e.id, t: e.type || 'Event', k: s.k, ic: s.ic, bin: e.bin || '—', ts: toMs(e.ts), detail: e.detail || '' }
+  })
+}
+
+export function normalizeAlerts(rows, fleet) {
+  if (!Array.isArray(rows)) return []
+  const byId = new Map((fleet || []).map((b) => [b.id, b]))
+  const rank = { crit: 0, warn: 1, info: 2 }
+  return rows
+    .map((a) => ({
+      id: a.id,
+      // Screens read alert.bin as a full bin record, so resolve the id.
+      bin: byId.get(a.bin) || { id: a.bin, name: a.bin, fill: 0, zone: '', team: '' },
+      sev: a.sev || 'info',
+      t: a.type || 'Alert',
+      d: a.detail || '',
+      acknowledged: !!a.acknowledged,
+      ts: toMs(a.ts),
+    }))
+    .sort((a, b) => (rank[a.sev] ?? 3) - (rank[b.sev] ?? 3) || b.bin.fill - a.bin.fill)
+}
+
+export function normalizeHistory(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return makeHistory()
+  return rows.map((r) => ({ h: new Date(toMs(r.ts)).getHours(), avg: Math.round(r.fill || 0) }))
+}
+
+// Returned as tuples so it drops into the same rendering as the CREW constant.
+export function normalizeCrew(rows) {
+  if (!Array.isArray(rows)) return CREW
+  return rows.map((c) => [
+    c.name, String(c.team || '').replace(/^Team\s+/, ''), c.zone, c.shift, c.stops ?? 0, c.status || 'Available',
+  ])
+}
+
+export function normalizeCollections(rows, fleet) {
+  if (!Array.isArray(rows)) return []
+  const byId = new Map((fleet || []).map((b) => [b.id, b]))
+  return rows.map((c) => ({
+    id: c.id,
+    binId: c.bin,
+    bin: byId.get(c.bin) || { id: c.bin, name: c.bin, zone: '', fill: 0 },
+    team: String(c.team || '').replace(/^Team\s+/, ''),
+    status: c.status || 'pending',
+    reason: c.reason || '',
+    eta: c.eta ?? 0,
+    created: toMs(c.created),
+    completed: c.completed ? toMs(c.completed) : null,
+  }))
+}

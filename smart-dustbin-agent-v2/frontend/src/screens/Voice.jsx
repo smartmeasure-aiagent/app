@@ -3,6 +3,7 @@ import { useFleet } from '../state/FleetContext.jsx'
 import { PageHeader, Panel, Stat, Toggle } from '../components/ui.jsx'
 import { Icon } from '../components/icons.jsx'
 import { VOICE_INTENTS, answerQuery } from '../data/model.js'
+import { voiceQuery } from '../data/api.js'
 
 const SUGGEST = ['Which bins are full?', 'Fleet health summary', 'Fullest bin right now', 'How many need collection?']
 
@@ -28,12 +29,16 @@ export default function Voice() {
       if (i >= text.length) clearInterval(typeTimer.current)
     }, 16)
   }
+  // Ask the agent backend, which grounds its answer in stored readings before a
+  // model rewords it. If the agent is not running, answer locally instead.
   const run = (q) => {
     if (!q.trim()) return
     setMsgs((m) => [...m, ['u', q]])
     setInput('')
     setThinking(true)
-    setTimeout(() => { setThinking(false); typeOut(answerQuery(q, fleet)) }, 550)
+    voiceQuery(q)
+      .then((d) => { setThinking(false); typeOut(d.answer || answerQuery(q, fleet)) })
+      .catch(() => { setThinking(false); typeOut(answerQuery(q, fleet)) })
   }
   useEffect(() => () => clearInterval(typeTimer.current), [])
 

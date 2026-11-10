@@ -3,6 +3,7 @@ import { FleetProvider, useFleet } from './state/FleetContext.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Topbar from './components/Topbar.jsx'
 import ChatWidget from './components/ChatWidget.jsx'
+import CallOverlay from './components/CallOverlay.jsx'
 import { Icon } from './components/icons.jsx'
 
 import Dashboard from './screens/Dashboard.jsx'
@@ -117,6 +118,7 @@ function Shell() {
           </div>
         </main>
       </div>
+      <CallOverlay />
       <ChatWidget go={go} />
       <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
     </div>

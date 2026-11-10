@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useFleet } from '../state/FleetContext.jsx'
 import { Icon } from './icons.jsx'
 import { answerQuery } from '../data/model.js'
+import { voiceQuery } from '../data/api.js'
 
 const SUGGEST = ['Which bins are full?', 'Fleet health summary', 'Fullest bin right now']
 
@@ -37,7 +38,9 @@ export default function ChatWidget({ go }) {
     setMsgs((m) => [...m, ['u', q]])
     setInput('')
     setThinking(true)
-    setTimeout(() => { setThinking(false); typeOut(answerQuery(q, fleet)) }, 450)
+    voiceQuery(q)
+      .then((d) => { setThinking(false); typeOut(d.answer || answerQuery(q, fleet)) })
+      .catch(() => { setThinking(false); typeOut(answerQuery(q, fleet)) })
   }
 
   return (

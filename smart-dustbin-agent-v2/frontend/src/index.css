@@ -530,3 +530,31 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .mk circle{transition:fill .5s ease}
 .feed .dot svg,.panel-h .liveflag{will-change:transform}
 .content{scroll-behavior:smooth}
+
+/* ---------------------------------------------------------------- */
+/* Automated collection call: rings in-browser when Twilio is absent */
+
+.callwrap{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
+  padding:18px;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(5px)}
+.dialler{width:100%;max-width:520px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:24px;display:flex;flex-direction:column}
+.dialler h3{margin:4px 0;font-family:var(--font-d);font-size:20px}
+.dl-eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:700;color:var(--accent)}
+.dl-sub{margin:6px 0 0;color:var(--muted);font-size:13px}
+.dl-hint{margin:14px 0 0;color:var(--muted);font-size:12px}
+.dl-ring{text-align:center}
+.dl-pulse{display:inline-flex;align-items:center;justify-content:center;width:62px;height:62px;
+  border-radius:50%;background:var(--accent-bg);color:var(--accent);margin-bottom:14px;
+  animation:dlring 1.4s ease-out infinite}
+@keyframes dlring{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 45%,transparent)}
+  70%{box-shadow:0 0 0 18px transparent}
+  100%{box-shadow:0 0 0 0 transparent}}
+.dl-btns{display:flex;gap:10px;justify-content:center;margin-top:20px}
+.dl-decline{border-color:color-mix(in srgb,var(--crit) 45%,var(--border));color:var(--crit)}
+.dl-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.dl-body{max-height:40vh;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding:2px}
+.dl-note{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11.5px;margin:12px 0 10px}
+.dl-form{display:flex;gap:8px}
+.dl-form .inp{flex:1;min-width:0}
+@media(max-width:560px){.dialler{padding:18px}.dl-body{max-height:46vh}.dl-btns{flex-direction:column}}
