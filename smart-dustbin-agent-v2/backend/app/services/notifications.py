@@ -51,15 +51,28 @@ def twilio_ready():
                 and settings.twilio_from_number and recipients()[1])
 
 def notify_alert(db, message, severity, bin_id=None, fill=None, location=""):
-    """Dispatch an alert. Every alert starts at 80%, so every alert places a call."""
-    send_email(f"[{severity.upper()}] Smart Dustbin Alert", message)
-    send_twilio_sms(message)
+    """Dispatch an alert. Every alert starts at 80%, so every alert places a call.
+
+    Telephony is best-effort: an email/SMS/call failure (e.g. a Twilio trial account
+    rejecting the message) must never stop the dashboard call from ringing, so each
+    external dispatch is isolated and a failed phone call falls back to the browser.
+    """
+    try:
+        send_email(f"[{severity.upper()}] Smart Dustbin Alert", message)
+    except Exception:
+        log.warning("Alert email failed; continuing", exc_info=True)
+    try:
+        send_twilio_sms(message)
+    except Exception:
+        log.warning("Alert SMS failed; continuing", exc_info=True)
+    # No telephony (or it failed): ring the dashboard so the conversation still happens.
+    channel = "browser"
     if twilio_ready():
-        send_twilio_call(message)
-        channel = "twilio"
-    else:
-        # No telephony: ring the dashboard so the conversation still happens.
-        channel = "browser"
+        try:
+            send_twilio_call(message)
+            channel = "twilio"
+        except Exception:
+            log.warning("Twilio voice call failed; ringing the dashboard instead", exc_info=True)
     if bin_id is not None and fill is not None:
         from .calls import place_call
         place_call(db, bin_id, location, float(fill), severity, channel=channel)
