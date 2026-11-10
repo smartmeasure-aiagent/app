@@ -6,7 +6,7 @@ services:
     env_file:
       - backend/.env
     ports:
-      - "8000:8000"
+      - "8032:8032"
     volumes:
       - ./backend:/app
       - ./sample-data:/app/sample-data:ro

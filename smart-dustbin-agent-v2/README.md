@@ -27,9 +27,9 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8032
 ```
-Demo mode uses the included sample data. API docs: http://localhost:8000/docs
+Demo mode uses the included sample data. API docs: http://localhost:8032/docs
 
 ### Frontend
 In a second terminal:
@@ -88,13 +88,13 @@ FLEET_ONLINE_TOLERANCE_SECONDS=300
 ### Reading and controlling the generators through this backend
 The dashboard talks to one origin, and the upstream key never reaches the browser:
 ```bash
-curl localhost:8000/api/fleet/state              # is our poller running?
-curl localhost:8000/api/fleet/stats              # passthrough: totals from upstream
-curl localhost:8000/api/fleet/crew               # also: bins, alerts, events, collections, ghats, history
-curl localhost:8000/api/sim/fleet/status         # generator config and run stats
-curl -X POST localhost:8000/api/sim/fleet/start -H 'Content-Type: application/json' \
+curl localhost:8032/api/fleet/state              # is our poller running?
+curl localhost:8032/api/fleet/stats              # passthrough: totals from upstream
+curl localhost:8032/api/fleet/crew               # also: bins, alerts, events, collections, ghats, history
+curl localhost:8032/api/sim/fleet/status         # generator config and run stats
+curl -X POST localhost:8032/api/sim/fleet/start -H 'Content-Type: application/json' \
      -d '{"interval":1,"surge":3}'               # target: 'fleet' or 'single'
-curl -X POST localhost:8000/api/sim/single/stop
+curl -X POST localhost:8032/api/sim/single/stop
 ```
 
 ### Upstream data-quality traits worth knowing
@@ -113,10 +113,10 @@ Only *changed* readings are logged, because only those are stored. Set `LOG_LEVE
 
 Other views, in increasing order of detail:
 ```bash
-curl http://localhost:8000/api/stream/state   # is the consumer connected?
-curl http://localhost:8000/api/status         # current reading per bin
-curl http://localhost:8000/api/alerts         # alert records
-curl http://localhost:8000/api/events         # THRESHOLD_ALERT / ALERT_RECOVERED / RESET
+curl http://localhost:8032/api/stream/state   # is the consumer connected?
+curl http://localhost:8032/api/status         # current reading per bin
+curl http://localhost:8032/api/alerts         # alert records
+curl http://localhost:8032/api/events         # THRESHOLD_ALERT / ALERT_RECOVERED / RESET
 ```
 The dashboard at http://localhost:5173 refreshes every 5 seconds. To watch the upstream feed raw, bypassing this backend entirely:
 ```bash
