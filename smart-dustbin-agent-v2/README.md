@@ -72,6 +72,36 @@ PERSIST_HEARTBEAT_SECONDS=300
 - Because duplicates are dropped, the "2 consecutive readings >= 80%" rule counts two consecutive *distinct* readings.
 - `GET /api/stream/state` reports whether the consumer is connected and which bins it has seen.
 
+## 3d. Fleet feed and synthetic data generators
+The upstream runs two independent synthetic generators. The **fleet** one models 16 bins across 5 Godavari ghats and is far richer than the single-bin voice stream — it carries coordinates, battery, zone, crew and density — so it is the preferred source.
+```env
+FLEET_ENABLED=true
+FLEET_PATH=/api/fleet
+FLEET_POLL_SECONDS=10
+FLEET_ONLINE_TOLERANCE_SECONDS=300
+```
+- `services/fleet.py` polls `GET /api/fleet`, maps each record onto a `BinReading`, and feeds the same threshold engine. Unchanged bins are not rewritten.
+- `BinReading` carries the extra fleet fields (`zone`, `ghat_code`, `density`, `team`, `battery`, `rssi`, `temp`, `lat`, `lng`, …). They are null for voice-stream readings, which do not report them.
+- Fleet endpoints need **no API key**; the voice endpoints do. `auth_headers()` is sent either way and is harmless.
+- Both feeds can run together: the fleet covers the 16 synthetic bins, the voice stream covers `BIN-SIM-01`.
+
+### Reading and controlling the generators through this backend
+The dashboard talks to one origin, and the upstream key never reaches the browser:
+```bash
+curl localhost:8000/api/fleet/state              # is our poller running?
+curl localhost:8000/api/fleet/stats              # passthrough: totals from upstream
+curl localhost:8000/api/fleet/crew               # also: bins, alerts, events, collections, ghats, history
+curl localhost:8000/api/sim/fleet/status         # generator config and run stats
+curl -X POST localhost:8000/api/sim/fleet/start -H 'Content-Type: application/json' \
+     -d '{"interval":1,"surge":3}'               # target: 'fleet' or 'single'
+curl -X POST localhost:8000/api/sim/single/stop
+```
+
+### Upstream data-quality traits worth knowing
+- **`online` is unreliable.** The fleet generator refreshes only a bin or two per tick, so its `online` flag reads false for most bins at any instant even while they report normally — `lastUpdateS` reaches 200s+. We therefore derive reachability from `lastUpdateS` against `FLEET_ONLINE_TOLERANCE_SECONDS` rather than trusting the flag, which would otherwise mark a healthy fleet offline.
+- **`battery` is 0 for all 16 bins.** That is genuine simulated decay after ~20 hours of generator uptime; no recharge is modelled. Treat battery and `lowBattery` as unusable until the upstream resets its snapshot.
+- Posting Swagger's placeholder values to `/api/sim/start` (`device_id: "string"`, `fault_chance: 1.0`, `bin_height: 1.0`) wedges the single-bin generator: it produces faults forever and zero readings, and ingests a bin literally named `string`. Restart it with real values if `/api/sim/single/status` looks like that.
+
 ## 3c. Watching the data arrive
 The backend logs every stored reading at `INFO`, so the console is the fastest way to confirm ingest:
 ```

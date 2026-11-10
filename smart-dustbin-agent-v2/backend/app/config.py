@@ -20,6 +20,15 @@ class Settings:
     upstream_api_token = os.getenv("UPSTREAM_API_TOKEN", "")
     upstream_api_key = os.getenv("UPSTREAM_API_KEY", "")
     upstream_timeout_seconds = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "15"))
+    # Fleet feed: 16 synthetic bins with coordinates, battery and crew. Richer than
+    # the single-bin voice stream, so it is the preferred source when available.
+    fleet_enabled = os.getenv("FLEET_ENABLED", "true").lower() == "true"
+    fleet_path = os.getenv("FLEET_PATH", "/api/fleet")
+    fleet_poll_seconds = int(os.getenv("FLEET_POLL_SECONDS", "15"))
+    # The upstream fleet generator refreshes only a bin or two per tick, so its
+    # own `online` flag reads false for most bins at any instant even while they
+    # report normally. Judge freshness from the bin's own lastUpdateS instead.
+    fleet_online_tolerance_seconds = int(os.getenv("FLEET_ONLINE_TOLERANCE_SECONDS", "300"))
     upstream_stream_enabled = os.getenv("UPSTREAM_STREAM_ENABLED", "true").lower() == "true"
     upstream_stream_path = os.getenv("UPSTREAM_STREAM_PATH", "/api/voice/stream")
     upstream_stream_interval = int(os.getenv("UPSTREAM_STREAM_INTERVAL", "2"))

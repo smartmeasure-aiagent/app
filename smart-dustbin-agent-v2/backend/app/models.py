@@ -16,6 +16,23 @@ class BinReading(Base):
     online = Column(Boolean, default=True)
     sensor_ok = Column(Boolean, default=True)
     updated_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+    # Fleet telemetry. Present when readings come from the upstream /api/fleet
+    # feed; null for the single-bin voice stream, which does not report them.
+    name = Column(String(128), default="")
+    zone = Column(String(128), default="")
+    ghat_code = Column(String(16), default="")
+    sector = Column(String(32), default="")
+    density = Column(String(16), default="")
+    team = Column(String(64), default="")
+    capacity = Column(Integer, nullable=True)
+    battery = Column(Float, nullable=True)
+    rssi = Column(Float, nullable=True)
+    temp = Column(Float, nullable=True)
+    fill_rate = Column(Float, nullable=True)
+    failed_reads = Column(Integer, nullable=True)
+    firmware = Column(String(32), default="")
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
 
 class Alert(Base):
     __tablename__ = "alerts"

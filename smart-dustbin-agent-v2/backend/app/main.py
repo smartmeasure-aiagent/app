@@ -6,13 +6,13 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import tempfile, os, logging
-from .db import Base, engine, get_db, SessionLocal
+from .db import Base, engine, get_db, SessionLocal, add_missing_columns
 from .models import BinReading, Alert, Event
 from .services.sample_data import load_sample
 from .services.poller import start_poller, stop_poller, poll_once
 from .services.stream import start_stream, stop_stream, stream_state
 from .services.monitoring import process_reading
-from .services import calls
+from .services import calls, fleet
 from .agents.conversation_graph import conversation_graph
 from .config import settings
 
@@ -32,17 +32,21 @@ def configure_logging():
 async def lifespan(app: FastAPI):
     configure_logging()
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()
     db = SessionLocal()
     try:
         load_sample(db)
     finally:
         db.close()
-    # The stream is the primary feed; polling is the fallback when it is disabled.
+    # Fleet is the richest source; the single-bin voice stream covers the real
+    # ESP32 unit; the generic poller is the fallback when neither is enabled.
+    fleet_on = fleet.start_fleet_poller()
     streaming = start_stream()
-    if not streaming:
+    if not (fleet_on or streaming):
         start_poller(settings.poll_interval_seconds)
     yield
     await stop_stream()
+    fleet.stop_fleet_poller()
     stop_poller()
 
 app = FastAPI(title="Smart Dustbin Voice Agent API", version="1.0.0", lifespan=lifespan)
@@ -147,6 +151,77 @@ async def run_poll():
 @app.get("/api/stream/state")
 def stream_status():
     return stream_state()
+
+# --- Fleet feed and synthetic data generators -------------------------------
+# Read-through to the upstream so the dashboard needs only one origin, and the
+# upstream API key never reaches the browser.
+
+@app.get("/api/fleet/state")
+def fleet_status():
+    return fleet.fleet_state()
+
+@app.post("/api/fleet/poll")
+async def fleet_poll():
+    return await fleet.poll_fleet_once()
+
+FLEET_READS = {
+    "bins": "/api/fleet", "stats": "/api/fleet/stats", "alerts": "/api/fleet/alerts",
+    "events": "/api/fleet/events", "collections": "/api/fleet/collections",
+    "crew": "/api/fleet/crew", "ghats": "/api/fleet/ghats", "history": "/api/fleet/history",
+}
+
+@app.get("/api/fleet/{resource}")
+async def fleet_resource(resource: str, window: str | None = None, limit: int | None = None):
+    path = FLEET_READS.get(resource)
+    if not path:
+        raise HTTPException(404, f"Unknown fleet resource. Try: {', '.join(sorted(FLEET_READS))}")
+    params = {k: v for k, v in (("window", window), ("limit", limit)) if v is not None}
+    try:
+        return {"resource": resource, "data": await fleet.fetch(path, params=params or None)}
+    except Exception as exc:
+        raise HTTPException(502, f"Upstream fleet request failed: {exc}")
+
+class SimConfig(BaseModel):
+    """Generator settings. Only the fields you set are forwarded upstream."""
+    interval: float | None = None
+    speed: float | None = None
+    fault_chance: float | None = None
+    bin_height: float | None = None
+    device_id: str | None = None
+    fw: str | None = None
+    auto_collect: bool | None = None
+    cycles: int | None = None
+    duration_s: float | None = None
+    surge: float | None = None
+
+SIM_TARGETS = {"single": "/api/sim", "fleet": "/api/fleet/sim"}
+
+@app.get("/api/sim/{target}/status")
+async def sim_status(target: str):
+    prefix = SIM_TARGETS.get(target)
+    if not prefix:
+        raise HTTPException(404, "target must be 'single' or 'fleet'")
+    try:
+        return await fleet.fetch(f"{prefix}/status")
+    except Exception as exc:
+        raise HTTPException(502, f"Upstream generator request failed: {exc}")
+
+@app.post("/api/sim/{target}/{action}")
+async def sim_control(target: str, action: str, cfg: SimConfig | None = None):
+    prefix = SIM_TARGETS.get(target)
+    if not prefix:
+        raise HTTPException(404, "target must be 'single' or 'fleet'")
+    if action not in ("start", "stop", "step"):
+        raise HTTPException(404, "action must be 'start', 'stop' or 'step'")
+    body = cfg.model_dump(exclude_none=True) if cfg else {}
+    try:
+        result = await fleet.command(f"{prefix}/{action}", body)
+    except Exception as exc:
+        raise HTTPException(502, f"Upstream generator command failed: {exc}")
+    # Pull the new data in immediately so the dashboard reflects the change.
+    if target == "fleet" and action in ("start", "step"):
+        await fleet.poll_fleet_once()
+    return result
 
 @app.get("/api/calls/active")
 def calls_active(db: Session = Depends(get_db)):
