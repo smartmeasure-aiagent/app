@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Icon } from './icons.jsx'
-import { Badge } from './ui.jsx'
+import { Badge, Toggle } from './ui.jsx'
 import { fetchActiveCalls, answerCall, sayToCall, endCall } from '../data/api.js'
+import { startRing, primeAudio, isAudioReady } from '../lib/ringtone.js'
 
 // Browsers block speech synthesis until a user gesture, which is why the agent
 // only starts talking after Answer is pressed.
@@ -17,13 +18,20 @@ function speak(text, onDone) {
 
 function listen(onText, onErr) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-  if (!SR) { onErr?.('Speech recognition needs Chrome or Edge. Type instead.'); return }
+  if (!SR) { onErr?.('Speech recognition needs Chrome or Edge. Type instead.'); return null }
   const rec = new SR()
   rec.lang = 'en-IN'; rec.interimResults = false; rec.maxAlternatives = 1
   rec.onresult = (e) => onText(e.results[0][0].transcript)
-  rec.onerror = (e) => onErr?.(e.error === 'not-allowed'
-    ? 'Microphone permission denied.' : `Could not hear you (${e.error}).`)
-  rec.start()
+  rec.onerror = (e) => {
+    // `aborted` is us hanging up, and `no-speech` is simply silence: neither is
+    // worth showing as a failure.
+    if (e.error === 'aborted') return
+    onErr?.(e.error === 'not-allowed' ? 'Microphone permission denied.'
+      : e.error === 'no-speech' ? 'Did not catch that — tap the mic to try again.'
+      : `Could not hear you (${e.error}).`)
+  }
+  try { rec.start() } catch { return null }
+  return rec
 }
 
 const POLL_MS = 4000
@@ -43,8 +51,39 @@ export default function CallOverlay() {
   const [reply, setReply] = useState('')
   const [busy, setBusy] = useState(false)
   const [hearing, setHearing] = useState(false)
+  const [handsFree, setHandsFree] = useState(true)
+  const [audioReady, setAudioReady] = useState(isAudioReady)
   const dismissed = useRef(new Set())   // ids declined in this session
   const bodyRef = useRef(null)
+  // Read inside speech callbacks, which capture state at the time they were made.
+  const handsFreeRef = useRef(handsFree)
+  handsFreeRef.current = handsFree
+  const micRef = useRef(null)
+  const recRef = useRef(null)
+
+  // The audio context cannot start until the user has interacted with the page,
+  // so prime it on the first gesture anywhere and remember that sound now works.
+  useEffect(() => {
+    if (audioReady) return
+    const unlock = () => {
+      primeAudio()
+      // resume() is async; check on the next tick before trusting it.
+      setTimeout(() => { if (isAudioReady()) setAudioReady(true) }, 60)
+    }
+    const opts = { passive: true }
+    window.addEventListener('pointerdown', unlock, opts)
+    window.addEventListener('keydown', unlock, opts)
+    return () => {
+      window.removeEventListener('pointerdown', unlock, opts)
+      window.removeEventListener('keydown', unlock, opts)
+    }
+  }, [audioReady])
+
+  // Ring for as long as the call is unanswered.
+  useEffect(() => {
+    if (call?.state !== 'ringing' || !audioReady) return
+    return startRing()
+  }, [call?.state, call?.id, audioReady])
 
   // Poll for ringing calls. A connected call is kept as-is so the transcript is
   // not clobbered mid-conversation; it only clears when the backend drops it
@@ -78,24 +117,44 @@ export default function CallOverlay() {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
   }, [call?.transcript?.length, note])
 
+  // Never leave speech or the mic running if this unmounts mid-call.
+  useEffect(() => () => {
+    window.speechSynthesis?.cancel()
+    try { recRef.current?.abort?.() } catch { /* not listening */ }
+  }, [])
+
+  // Once the agent stops talking, open the mic automatically so the call flows
+  // like a real one. Falls back to the prompt when hands-free is off.
+  const afterSpeaking = () => {
+    if (handsFreeRef.current) micRef.current?.()
+    else setNote('Your turn — tap the mic or type a reply.')
+  }
+
   const onAnswer = async () => {
+    primeAudio()   // this click is the gesture that lets audio play
     setBusy(true); setNote('Connecting…')
     try {
       const d = await answerCall(call.id)
       setCall(d); setNote('Agent speaking…')
-      speak(d.opening_line, () => setNote('Your turn — tap the mic or type a reply.'))
+      speak(d.opening_line, afterSpeaking)
     } catch (e) { setNote(e.message || 'Could not answer') } finally { setBusy(false) }
   }
 
-  const onDecline = async () => {
+  const stopAudio = () => {
+    window.speechSynthesis?.cancel()
+    try { recRef.current?.abort?.() } catch { /* not listening */ }
+    recRef.current = null
+  }
+
+  const onDecline = () => {
     const id = call.id
-    dismissed.current.add(id); setCall(null); window.speechSynthesis?.cancel()
+    dismissed.current.add(id); setCall(null); stopAudio()
     endCall(id, 'declined').catch(() => {})
   }
 
-  const onHangUp = async () => {
+  const onHangUp = () => {
     const id = call.id
-    setCall(null); setNote(''); window.speechSynthesis?.cancel()
+    setCall(null); setNote(''); stopAudio()
     endCall(id, 'ended').catch(() => {})
   }
 
@@ -105,14 +164,18 @@ export default function CallOverlay() {
     try {
       const d = await sayToCall(call.id, text)
       setCall(d.call); setNote('Agent speaking…')
-      speak(d.reply, () => setNote('Your turn — tap the mic or type a reply.'))
+      speak(d.reply, afterSpeaking)
     } catch (e) { setNote(e.message || 'Call turn failed') } finally { setBusy(false) }
   }, [call])
 
-  const onMic = () => {
-    setHearing(true); setNote('Listening…')
-    listen((t) => { setHearing(false); say(t) }, (m) => { setHearing(false); setNote(m) })
-  }
+  const onMic = useCallback(() => {
+    setHearing(true); setNote('Listening… speak now.')
+    recRef.current = listen(
+      (t) => { setHearing(false); say(t) },
+      (m) => { setHearing(false); setNote(m) },
+    )
+  }, [say])
+  micRef.current = onMic
 
   if (!call) return null
   const sevCls = call.severity === 'critical' || call.severity === 'high' ? 'crit' : 'warn'
@@ -129,7 +192,11 @@ export default function CallOverlay() {
               {call.location || 'Location not reported'} · {Math.round(call.fill)}% full{' '}
               <Badge cls={sevCls}>{call.severity}</Badge>
             </p>
-            <p className="dl-hint">The agent reads the alert aloud, then answers your questions.</p>
+            <p className="dl-hint">
+              {audioReady
+                ? 'The agent reads the alert aloud, then answers your questions.'
+                : 'Ringtone is muted until you interact with the page — answering turns sound on.'}
+            </p>
             <div className="dl-btns">
               <button className="tbtn btn-pri" disabled={busy} onClick={onAnswer}>
                 <Icon name="phone" size={15} />Answer
@@ -152,7 +219,15 @@ export default function CallOverlay() {
                 <div key={i} className={`bubble ${t.role === 'agent' ? 'a' : 'u'}`}>{t.text}</div>
               ))}
             </div>
-            <div className="dl-note"><Icon name="wave" size={13} /> {note || 'Connected.'}</div>
+            <div className="dl-foot">
+              <div className="dl-note">
+                <Icon name={hearing ? 'mic' : 'wave'} size={13} /> {note || 'Connected.'}
+              </div>
+              <label className="dl-hf" title="Open the mic automatically after the agent speaks">
+                <span>Hands-free</span>
+                <Toggle on={handsFree} onChange={() => setHandsFree((h) => !h)} />
+              </label>
+            </div>
             <form className="dl-form" onSubmit={(e) => { e.preventDefault(); say(reply) }}>
               <input className="inp" placeholder="Type a reply, or use the mic"
                 value={reply} onChange={(e) => setReply(e.target.value)} disabled={busy} />
