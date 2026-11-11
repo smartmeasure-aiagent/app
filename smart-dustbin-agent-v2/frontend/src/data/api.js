@@ -9,8 +9,12 @@
 // Fleet reads go straight to API_BASE so the dashboard still works when the agent
 // is not running. Anything only the agent can answer uses AGENT_BASE and degrades
 // to the local simulation on failure.
+// Upstream device/fleet API stays on its raw IP — it is not served over the
+// subdomains. The agent is reached over HTTPS via its Cloudflare subdomain so
+// the dashboard can be served over HTTPS too, which Chrome requires before it
+// will grant microphone access for the voice call.
 export const API_BASE = (import.meta.env.VITE_API_BASE || 'http://37.27.53.14:8031').replace(/\/$/, '')
-export const AGENT_BASE = (import.meta.env.VITE_AGENT_BASE || 'http://37.27.53.14:8032').replace(/\/$/, '')
+export const AGENT_BASE = (import.meta.env.VITE_AGENT_BASE || 'https://smartgcbe.coarchitive.com').replace(/\/$/, '')
 
 const withTimeout = (ms, promise) =>
   Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])

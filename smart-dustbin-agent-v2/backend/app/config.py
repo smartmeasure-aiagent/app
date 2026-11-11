@@ -20,7 +20,12 @@ class Settings:
     # has to be listed. Set PUBLIC_HOST to add a deployment's address, or
     # CORS_ORIGINS to replace this list outright.
     public_host = os.getenv("PUBLIC_HOST", "37.27.53.14")
+    # The dashboard is served over HTTPS from its Cloudflare subdomain, so that
+    # exact origin must be allowed or every call to this agent fails CORS. Add
+    # more deployment origins with CORS_ORIGINS (which replaces this list).
     cors_origins = csv_env("CORS_ORIGINS") or [
+        "https://smartgcfe.coarchitive.com",
+    ] + [
         f"http://{host}:{port}"
         for host in ("localhost", "127.0.0.1", public_host)
         for port in (5173, 3031)
