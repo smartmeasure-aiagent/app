@@ -7,6 +7,8 @@
  * helpers report what is available so the UI can say so.
  */
 
+import { speechUrl } from '../data/api.js'
+
 export const LANGS = {
   en: { code: 'en-IN', label: 'English', short: 'EN' },
   te: { code: 'te-IN', label: 'తెలుగు', short: 'TE' },
@@ -49,7 +51,48 @@ export async function canSpeak(lang) {
  * Speak `text` in `lang`. Calls onDone when finished (or immediately on failure).
  * Returns the voice actually used, so callers can warn when it is a substitute.
  */
+let current = null   // <audio> element playing server-rendered speech
+
+/** Stop whatever is speaking, from either source. */
+export function stopSpeaking() {
+  try { window.speechSynthesis?.cancel() } catch { /* unsupported */ }
+  if (current) {
+    current.pause()
+    URL.revokeObjectURL(current.src)
+    current = null
+  }
+}
+
+/**
+ * Speak `text` in `lang`, preferring the agent's neural voices.
+ *
+ * Server audio is tried first: it sounds identical on every machine and is the
+ * only way Telugu is reliably spoken at all. Falls back to the browser voice if
+ * the agent is unreachable or autoplay is blocked.
+ */
 export async function speak(text, lang, onDone) {
+  const url = await speechUrl(text, lang)
+  if (url) {
+    stopSpeaking()
+    const audio = new Audio(url)
+    current = audio
+    const finish = () => {
+      if (current === audio) { URL.revokeObjectURL(url); current = null }
+      onDone?.()
+    }
+    audio.onended = finish
+    audio.onerror = finish
+    try {
+      await audio.play()
+      return { source: 'server', lang }
+    } catch {
+      finish()   // autoplay blocked: fall through to the browser voice
+    }
+  }
+  return speakWithBrowser(text, lang, onDone)
+}
+
+async function speakWithBrowser(text, lang, onDone) {
   try {
     const synth = window.speechSynthesis
     if (!synth) { onDone?.(); return null }

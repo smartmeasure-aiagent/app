@@ -3,10 +3,13 @@ import { Icon } from './icons.jsx'
 import { Badge, Toggle } from './ui.jsx'
 import { fetchActiveCalls, answerCall, sayToCall, endCall } from '../data/api.js'
 import { startRing, primeAudio, isAudioReady } from '../lib/ringtone.js'
-import { speak, listen, canSpeak, LANGS } from '../lib/speech.js'
+import { speak, listen, canSpeak, LANGS, stopSpeaking } from '../lib/speech.js'
 
 
 const POLL_MS = 4000
+// Breathing room after a call ends before the next one is presented, so a fleet
+// with several full bins does not ring an operator back to back.
+const COOLDOWN_MS = 20000
 
 /**
  * Automated collection call, delivered in the browser.
@@ -38,6 +41,9 @@ export default function CallOverlay() {
   langRef.current = lang
   const micRef = useRef(null)
   const recRef = useRef(null)
+  // Id of the call being shown, so polling cannot swap it out mid-ring.
+  const shownRef = useRef(null)
+  const quietUntil = useRef(0)
 
   // The audio context cannot start until the user has interacted with the page,
   // so prime it on the first gesture anywhere and remember that sound now works.
@@ -79,16 +85,25 @@ export default function CallOverlay() {
         const { calls } = await fetchActiveCalls()
         if (cancelled) return
         setCall((prev) => {
-          if (prev && prev.state === 'active') {
-            if (!calls.some((c) => c.id === prev.id)) {
-              setNote('The bin no longer needs collection. Call ended.')
+          // Stay on the call already on screen — ringing or connected — until it
+          // is answered, declined, or the backend drops it. Previously each poll
+          // re-picked the newest ringing call, so the card jumped between bins.
+          if (prev) {
+            const still = calls.find((c) => c.id === prev.id)
+            if (!still) {
+              shownRef.current = null
+              if (prev.state === 'active') setNote('The bin no longer needs collection. Call ended.')
               return null
             }
-            return prev
+            // Adopt the server's state (ringing -> active) but keep our transcript.
+            return prev.state === 'active' ? prev : still
           }
-          return calls.find((c) => c.state === 'active')
+          if (Date.now() < quietUntil.current) return null   // cooling down
+          const next = calls.find((c) => c.state === 'active')
               || calls.find((c) => c.state === 'ringing' && !dismissed.current.has(c.id))
               || null
+          shownRef.current = next ? next.id : null
+          return next
         })
       } catch { /* agent backend not running: nothing to ring */ }
     }
@@ -103,7 +118,7 @@ export default function CallOverlay() {
 
   // Never leave speech or the mic running if this unmounts mid-call.
   useEffect(() => () => {
-    window.speechSynthesis?.cancel()
+    stopSpeaking()
     try { recRef.current?.abort?.() } catch { /* not listening */ }
   }, [])
 
@@ -125,19 +140,23 @@ export default function CallOverlay() {
   }
 
   const stopAudio = () => {
-    window.speechSynthesis?.cancel()
+    stopSpeaking()
     try { recRef.current?.abort?.() } catch { /* not listening */ }
     recRef.current = null
   }
 
   const onDecline = () => {
     const id = call.id
-    dismissed.current.add(id); setCall(null); stopAudio()
+    dismissed.current.add(id); shownRef.current = null
+    quietUntil.current = Date.now() + COOLDOWN_MS
+    setCall(null); stopAudio()
     endCall(id, 'declined').catch(() => {})
   }
 
   const onHangUp = () => {
     const id = call.id
+    shownRef.current = null
+    quietUntil.current = Date.now() + COOLDOWN_MS
     setCall(null); setNote(''); stopAudio()
     endCall(id, 'ended').catch(() => {})
   }

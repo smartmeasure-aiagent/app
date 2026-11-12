@@ -70,6 +70,24 @@ export const simStep = (target = 'fleet') => postJSON(`${simPrefix(target)}/step
 export const voiceQuery = (text, lang = 'en') =>
   postJSON('/api/voice/query', { text, lang }, { base: AGENT_BASE })
 
+/** Server-rendered speech as an object URL for an <audio> element, or null if
+ *  the agent cannot synthesise (the caller then falls back to browser speech).
+ *  Required because browsers rarely have a Telugu voice installed. */
+export async function speechUrl(text, lang = 'en') {
+  try {
+    const res = await withTimeout(45000, fetch(`${AGENT_BASE}/api/voice/speak`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, lang }),
+    }))
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return blob.size ? URL.createObjectURL(blob) : null
+  } catch { return null }
+}
+
+export const fetchTtsState = () => getJSON('/api/voice/tts-state', { base: AGENT_BASE, ms: 5000 })
+
 export const fetchAgentHealth = () => getJSON('/api/health', { base: AGENT_BASE, ms: 4000 })
 export const fetchAgentAlerts = () => getJSON('/api/alerts', { base: AGENT_BASE })
 export const fetchAgentEvents = () => getJSON('/api/events', { base: AGENT_BASE })

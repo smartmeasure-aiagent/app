@@ -15,3 +15,6 @@ langchain-core
 langchain-groq
 groq
 twilio
+# Fallback TTS engines (free, keyless). Sarvam is primary when SARVAM_API_KEY is set.
+edge-tts
+gTTS

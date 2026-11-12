@@ -54,6 +54,15 @@ class Settings:
     # The stream repeats the same reading every interval. Persist only changed
     # readings, plus a heartbeat row this often, to bound database growth.
     persist_heartbeat_seconds = int(os.getenv("PERSIST_HEARTBEAT_SECONDS", "300"))
+    # Sarvam AI TTS — Indian-language neural voices, used in preference to the
+    # keyless engines when a key is present. `bulbul:v2` is deprecated upstream.
+    # An operator can only take one call at a time. Without a cap, a fleet where
+    # several bins cross 80% at once queues a call per bin and they ring back to
+    # back. The Alert records still exist, so capping loses no information.
+    max_concurrent_calls = int(os.getenv("MAX_CONCURRENT_CALLS", "1"))
+    sarvam_api_key = os.getenv("SARVAM_API_KEY", "")
+    sarvam_model = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
+    sarvam_speaker = os.getenv("SARVAM_TTS_SPEAKER", "ritu")
     groq_api_key = os.getenv("GROQ_API_KEY", "")
     groq_chat_model = os.getenv("GROQ_CHAT_MODEL", "openai/gpt-oss-120b")
     groq_stt_model = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")

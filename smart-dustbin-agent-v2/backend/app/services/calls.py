@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, desc
 from ..models import VoiceCall, Event
 from ..agents.conversation_graph import answer_question
+from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -69,14 +70,23 @@ def opening_line(bin_id, location, fill, severity, lang="en"):
             "You can ask me about the bin, or say collected when it has been emptied.")
 
 def place_call(db, bin_id, location, fill, severity, channel="browser"):
-    """Ring a new call unless one is already live for this bin."""
-    existing = db.execute(
-        select(VoiceCall).where(VoiceCall.bin_id == bin_id,
-                                VoiceCall.state.in_(("ringing", "active")))
-    ).scalars().first()
+    """Ring a new call, unless one is live for this bin or the line is busy."""
+    expire_stale(db)
+    live = db.execute(
+        select(VoiceCall).where(VoiceCall.state.in_(("ringing", "active")))
+    ).scalars().all()
+
+    existing = next((c for c in live if c.bin_id == bin_id), None)
     if existing:
         log.info("Call %s already live for %s; not placing another.", existing.id, bin_id)
         return existing
+
+    # The alert is already recorded, so skipping the call only avoids ringing an
+    # operator who is still dealing with the previous one.
+    if len(live) >= settings.max_concurrent_calls:
+        log.info("Line busy (%d live, cap %d); not calling about %s at %.0f%%",
+                 len(live), settings.max_concurrent_calls, bin_id, fill)
+        return None
     call = VoiceCall(bin_id=bin_id, location=location or "", fill=fill, severity=severity,
                      opening_line=opening_line(bin_id, location, fill, severity),
                      channel=channel, state="ringing", transcript="[]")

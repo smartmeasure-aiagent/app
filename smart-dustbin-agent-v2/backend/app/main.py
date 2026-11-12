@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
@@ -12,7 +12,7 @@ from .services.sample_data import load_sample
 from .services.poller import start_poller, stop_poller, poll_once
 from .services.stream import start_stream, stop_stream, stream_state
 from .services.monitoring import process_reading
-from .services import calls, fleet
+from .services import calls, fleet, tts
 from .agents.conversation_graph import conversation_graph
 from .config import settings
 
@@ -142,6 +142,32 @@ async def transcribe(audio: UploadFile = File(...), lang: str = "en"):
         return {"text": result.text}
     finally:
         os.unlink(path)
+
+class SpeakRequest(BaseModel):
+    text: str
+    lang: str = "en"
+
+@app.post("/api/voice/speak")
+async def speak(req: SpeakRequest):
+    """Synthesise speech server-side and return the audio.
+
+    Browsers cannot be relied on to have a Telugu voice installed, so rendering
+    here is the only way every client hears Telugu. The container depends on the
+    engine that answered (Sarvam gives WAV, the others MP3).
+    """
+    try:
+        audio, media_type = await tts.synthesize(req.text, req.lang)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        # The caller falls back to browser speech, so this is not fatal.
+        raise HTTPException(503, f"Speech synthesis unavailable: {exc}")
+    return Response(content=audio, media_type=media_type,
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+@app.get("/api/voice/tts-state")
+def tts_state():
+    return tts.state()
 
 @app.post("/api/reset")
 def reset(req: ResetRequest, db: Session = Depends(get_db)):
