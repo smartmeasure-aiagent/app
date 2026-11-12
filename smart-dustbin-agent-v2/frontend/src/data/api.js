@@ -65,8 +65,8 @@ export const simStep = (target = 'fleet') => postJSON(`${simPrefix(target)}/step
 
 /** Grounded AI answer. The agent computes it from stored readings, so it cannot
  *  invent fill levels; the model only rewords the verified result. */
-export const voiceQuery = (text) =>
-  postJSON('/api/voice/query', { text }, { base: AGENT_BASE })
+export const voiceQuery = (text, lang = 'en') =>
+  postJSON('/api/voice/query', { text, lang }, { base: AGENT_BASE })
 
 export const fetchAgentHealth = () => getJSON('/api/health', { base: AGENT_BASE, ms: 4000 })
 export const fetchAgentAlerts = () => getJSON('/api/alerts', { base: AGENT_BASE })
@@ -78,7 +78,9 @@ export const fetchStreamState = () => getJSON('/api/stream/state', { base: AGENT
 /* ------------------------------------- automated collection calls (agent only) */
 
 export const fetchActiveCalls = () => getJSON('/api/calls/active', { base: AGENT_BASE, ms: 5000 })
-export const answerCall = (id) => postJSON(`/api/calls/${id}/answer`, undefined, { base: AGENT_BASE })
-export const sayToCall = (id, text) => postJSON(`/api/calls/${id}/say`, { text }, { base: AGENT_BASE })
+export const answerCall = (id, lang = 'en') =>
+  postJSON(`/api/calls/${id}/answer?lang=${lang}`, undefined, { base: AGENT_BASE })
+export const sayToCall = (id, text, lang = 'en') =>
+  postJSON(`/api/calls/${id}/say`, { text, lang }, { base: AGENT_BASE })
 export const endCall = (id, reason = 'ended') =>
   postJSON(`/api/calls/${id}/end?reason=${reason}`, undefined, { base: AGENT_BASE })

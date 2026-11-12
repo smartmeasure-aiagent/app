@@ -45,12 +45,25 @@ def serialize(call):
         "created_at": call.created_at.isoformat() if call.created_at else None,
     }
 
-def opening_line(bin_id, location, fill, severity):
-    """The sentence the agent speaks the moment the call connects."""
+def opening_line(bin_id, location, fill, severity, lang="en"):
+    """The sentence the agent speaks the moment the call connects.
+
+    Written out per language rather than translated by the model: this is the
+    one line that must be right even when Groq is unreachable, because it is
+    what tells the crew which bin needs emptying.
+    """
     spoken_id = bin_id.replace("-", " ")
+    urgent = severity in ("high", "critical")
+    if lang == "te":
+        where = f"{location} లోని " if location else ""
+        urgency = ("దీన్ని వెంటనే ఖాళీ చేయాలి." if urgent
+                   else "దయచేసి సేకరణ ఏర్పాటు చేయండి.")
+        return (f"నమస్కారం, ఇది ఆటోమేటిక్ స్మార్ట్ డస్ట్‌బిన్ ఏజెంట్. "
+                f"{where}{spoken_id} చెత్త డబ్బా {round(fill)} శాతం నిండింది. {urgency} "
+                "ఈ డబ్బా గురించి మీరు నన్ను అడగవచ్చు, "
+                "లేదా ఖాళీ చేసిన తర్వాత 'సేకరించాం' అని చెప్పండి.")
     where = f" at {location}" if location else ""
-    urgency = "It needs immediate collection." if severity in ("high", "critical") else \
-              "Please arrange collection."
+    urgency = "It needs immediate collection." if urgent else "Please arrange collection."
     return (f"Hello, this is the automated smart dustbin agent. Bin {spoken_id}{where} "
             f"is {round(fill)} percent full. {urgency} "
             "You can ask me about the bin, or say collected when it has been emptied.")
@@ -110,12 +123,16 @@ def recent_calls(db, limit=20):
 def get_call(db, call_id):
     return db.get(VoiceCall, call_id)
 
-def answer_call(db, call):
-    """Connect the call and return the agent's opening turn."""
+def answer_call(db, call, lang="en"):
+    """Connect the call and return the agent's opening turn in `lang`."""
     if call.state == "ringing":
         call.state = "active"
         call.answered_at = _now()
-        _append(call, "agent", call.opening_line)
+        # The stored line is English; re-render it if the operator chose Telugu.
+        line = call.opening_line if lang == "en" else opening_line(
+            call.bin_id, call.location, call.fill, call.severity, lang=lang)
+        call.opening_line = line
+        _append(call, "agent", line)
         db.add(Event(bin_id=call.bin_id, event="CALL_ANSWERED", detail=f"Call {call.id} answered."))
         db.commit()
     return serialize(call)
@@ -142,7 +159,7 @@ def hang_up_for_bin(db, bin_id):
                      detail=f"Call {call.id} closed automatically: bin no longer needs collection."))
     return len(rows)
 
-def speak_turn(db, call, text, bins):
+def speak_turn(db, call, text, bins, lang="en"):
     """Record the caller's words and answer them in the context of this call."""
     if call.state != "active":
         raise ValueError("Call is not active")
@@ -150,7 +167,7 @@ def speak_turn(db, call, text, bins):
     context = (f"This call is about bin {call.bin_id}"
                f"{' at ' + call.location if call.location else ''}, "
                f"which was {round(call.fill)} percent full when the call was placed.")
-    reply = answer_question(text, bins, context=context)
+    reply = answer_question(text, bins, context=context, lang=lang)
     _append(call, "agent", reply)
     db.commit()
     return {"reply": reply, "call": serialize(call)}

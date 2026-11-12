@@ -10,6 +10,8 @@ class ConversationState(TypedDict, total=False):
     answer: str
     bins: list[dict]
     tool_result: Any
+    context: str
+    lang: str
 
 def speakable(text: str) -> str:
     """Strip markdown and exotic Unicode that text-to-speech and consoles handle badly."""
@@ -41,14 +43,21 @@ def verified_answer(question: str, bins: list[dict]) -> str:
     return ("I can check bin fill levels, bins needing collection, fleet status, "
             "and sensor health. What would you like to know?")
 
-def answer_question(question: str, bins: list[dict], context: str = "") -> str:
+# Languages the assistant can reply in. The verified answer is always computed
+# in English; `lang` only changes the wording the model produces from it.
+LANGUAGES = {
+    "en": "English",
+    "te": "Telugu (తెలుగు script, not transliteration)",
+}
+
+def answer_question(question: str, bins: list[dict], context: str = "", lang: str = "en") -> str:
     """Answer one turn. `context` names the bin a call is about, if any."""
     answer = verified_answer(question, bins)
     if settings.groq_api_key:
-        answer = phrase_with_llm(question, answer, context)
+        answer = phrase_with_llm(question, answer, context, lang)
     return answer
 
-def phrase_with_llm(question: str, verified: str, context: str = "") -> str:
+def phrase_with_llm(question: str, verified: str, context: str = "", lang: str = "en") -> str:
     """Reword the verified answer. Returns `verified` unchanged on any failure.
 
     The deterministic answer is the source of truth: the model only rephrases it,
@@ -64,16 +73,21 @@ def phrase_with_llm(question: str, verified: str, context: str = "") -> str:
             max_tokens=settings.groq_max_tokens,
             reasoning_effort=settings.groq_reasoning_effort,
         )
+        language = LANGUAGES.get(lang, LANGUAGES["en"])
         prompt = (
             "Answer the user's smart dustbin question using ONLY the supplied verified data. "
             "Do not invent bin readings. Keep it to one or two short sentences of plain "
-            "spoken English, with no markdown, lists or symbols.\n"
+            f"spoken {language}, with no markdown, lists or symbols. "
+            # Bin ids and zone names are painted on the bins in Latin script, so
+            # transliterating them would stop the crew recognising which bin it is.
+            "Keep bin identifiers and place names exactly as given, in their original script.\n"
             + (f"Call context: {context}\n" if context else "")
             + f"Question: {question}\nVerified result: {verified}"
         )
         persona = ("You are a smart dustbin voice assistant speaking on a phone call to "
                    "cleaning staff. Be brief, polite and natural."
                    if context else "You are a smart dustbin voice assistant.")
+        persona += f" Always reply in {language}."
         reply = llm.invoke([
             SystemMessage(content=persona),
             HumanMessage(content=prompt),
@@ -96,7 +110,8 @@ def build_conversation_graph():
     def respond(state: ConversationState):
         answer = verified_answer(state.get("question", ""), state.get("tool_result", []))
         if settings.groq_api_key:
-            answer = phrase_with_llm(state.get("question", ""), answer, state.get("context", ""))
+            answer = phrase_with_llm(state.get("question", ""), answer,
+                                     state.get("context", ""), state.get("lang", "en"))
         return {"answer": answer}
 
     graph = StateGraph(ConversationState)

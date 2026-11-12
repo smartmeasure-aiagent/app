@@ -54,6 +54,9 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_cr
 
 class QueryRequest(BaseModel):
     text: str
+    # "en" or "te". The verified answer is always computed from database rows;
+    # the language only changes how it is worded back to the user.
+    lang: str = "en"
 
 class ResetRequest(BaseModel):
     bin_id: str
@@ -109,11 +112,14 @@ def history(bin_id: str = "BIN-A1", db: Session = Depends(get_db)):
 
 @app.post("/api/voice/query")
 def voice_query(req: QueryRequest, db: Session = Depends(get_db)):
-    result = conversation_graph.invoke({"question": req.text, "bins": latest_bins(db)})
-    return {"question": req.text, "answer": result.get("answer", "Sorry, I could not answer that.")}
+    result = conversation_graph.invoke({
+        "question": req.text, "bins": latest_bins(db), "lang": req.lang,
+    })
+    return {"question": req.text, "lang": req.lang,
+            "answer": result.get("answer", "Sorry, I could not answer that.")}
 
 @app.post("/api/voice/transcribe")
-async def transcribe(audio: UploadFile = File(...)):
+async def transcribe(audio: UploadFile = File(...), lang: str = "en"):
     if not settings.groq_api_key:
         raise HTTPException(400, "Set GROQ_API_KEY to enable transcription.")
     from groq import Groq
@@ -124,7 +130,12 @@ async def transcribe(audio: UploadFile = File(...)):
     try:
         client = Groq(api_key=settings.groq_api_key)
         with open(path, "rb") as f:
-            result = client.audio.transcriptions.create(file=(os.path.basename(path), f.read()), model=settings.groq_stt_model)
+            # Naming the language markedly improves Whisper accuracy for Telugu.
+            result = client.audio.transcriptions.create(
+                file=(os.path.basename(path), f.read()),
+                model=settings.groq_stt_model,
+                language=lang if lang in ("en", "te") else "en",
+            )
         return {"text": result.text}
     finally:
         os.unlink(path)
@@ -233,11 +244,11 @@ def calls_recent(db: Session = Depends(get_db)):
     return {"calls": calls.recent_calls(db)}
 
 @app.post("/api/calls/{call_id}/answer")
-def call_answer(call_id: int, db: Session = Depends(get_db)):
+def call_answer(call_id: int, lang: str = "en", db: Session = Depends(get_db)):
     call = calls.get_call(db, call_id)
     if not call:
         raise HTTPException(404, "Call not found")
-    return calls.answer_call(db, call)
+    return calls.answer_call(db, call, lang=lang)
 
 @app.post("/api/calls/{call_id}/say")
 def call_say(call_id: int, req: QueryRequest, db: Session = Depends(get_db)):
@@ -245,7 +256,7 @@ def call_say(call_id: int, req: QueryRequest, db: Session = Depends(get_db)):
     if not call:
         raise HTTPException(404, "Call not found")
     try:
-        return calls.speak_turn(db, call, req.text, latest_bins(db))
+        return calls.speak_turn(db, call, req.text, latest_bins(db), lang=req.lang)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
 

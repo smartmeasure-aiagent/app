@@ -4,6 +4,7 @@ import { PageHeader, Panel, Stat, Toggle } from '../components/ui.jsx'
 import { Icon } from '../components/icons.jsx'
 import { VOICE_INTENTS, answerQuery } from '../data/model.js'
 import { voiceQuery } from '../data/api.js'
+import { speak, listen, LANGS } from '../lib/speech.js'
 
 const SUGGEST = ['Which bins are full?', 'Fleet health summary', 'Fullest bin right now', 'How many need collection?']
 
@@ -12,6 +13,13 @@ export default function Voice() {
   const [input, setInput] = useState('')
   const [msgs, setMsgs] = useState([['a', `Hi, I'm the BinPulse voice agent. Ask me anything about the ${stats.total}-bin network — try a suggestion above.`]])
   const [thinking, setThinking] = useState(false)
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem('sb-call-lang') || 'en' } catch { return 'en' }
+  })
+  const [hearing, setHearing] = useState(false)
+  const [vr, setVr] = useState(true), [at, setAt] = useState(true), [esc, setEsc] = useState(true)
+  const langRef = useRef(lang); langRef.current = lang
+  useEffect(() => { try { localStorage.setItem('sb-call-lang', lang) } catch { /* ignore */ } }, [lang])
   const outRef = useRef()
   const maxIntent = Math.max(...VOICE_INTENTS.map((i) => i[1]))
 
@@ -36,16 +44,16 @@ export default function Voice() {
     setMsgs((m) => [...m, ['u', q]])
     setInput('')
     setThinking(true)
-    voiceQuery(q)
-      .then((d) => { setThinking(false); typeOut(d.answer || answerQuery(q, fleet)) })
-      .catch(() => { setThinking(false); typeOut(answerQuery(q, fleet)) })
+    const show = (text) => { setThinking(false); typeOut(text); if (vr) speak(text, langRef.current) }
+    voiceQuery(q, langRef.current)
+      .then((d) => show(d.answer || answerQuery(q, fleet)))
+      .catch(() => show(answerQuery(q, fleet)))
   }
   useEffect(() => () => clearInterval(typeTimer.current), [])
 
   const Setting = ({ t, d, on, onChange }) => (
     <div className="tgrow"><div><div className="t">{t}</div><div className="d">{d}</div></div><Toggle on={on} onChange={onChange} /></div>
   )
-  const [vr, setVr] = useState(true), [at, setAt] = useState(true), [esc, setEsc] = useState(true)
 
   return (
     <>
@@ -68,13 +76,23 @@ export default function Voice() {
         <div className="panel">
           <div className="panel-h"><h3>Try a Query</h3><span className="hint">answered from live fleet data</span></div>
           <div className="panel-b">
+            <div className="dl-langs" style={{ margin: '0 0 12px' }} role="group" aria-label="Assistant language">
+              {Object.entries(LANGS).map(([k, v]) => (
+                <button key={k} type="button" className={`dl-lang ${lang === k ? 'on' : ''}`}
+                  onClick={() => setLang(k)}>{v.label}</button>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
               {SUGGEST.map((q) => <button key={q} className="chip" onClick={() => run(q)}>{q}</button>)}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input className="inp" style={{ flex: 1 }} placeholder="Ask about bins, fill levels, battery…"
                 value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') run(input) }} />
-              <button className="tbtn btn-pri" onClick={() => run(input)}><Icon name="mic" size={16} />Ask</button>
+              <button type="button" className={`tbtn ${hearing ? 'btn-pri' : ''}`} title="Speak your question"
+                onClick={() => { setHearing(true); listen(langRef.current, (x) => { setHearing(false); run(x) }, () => setHearing(false)) }}>
+                <Icon name="mic" size={16} />
+              </button>
+              <button className="tbtn btn-pri" onClick={() => run(input)}>Ask</button>
             </div>
             <div className="transcript" ref={outRef}>
               {msgs.map((m, i) => <div key={i} className={`bubble ${m[0]}`}>{m[1]}</div>)}

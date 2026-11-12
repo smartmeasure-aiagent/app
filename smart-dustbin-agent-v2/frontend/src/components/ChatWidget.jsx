@@ -38,7 +38,7 @@ export default function ChatWidget({ go }) {
     setMsgs((m) => [...m, ['u', q]])
     setInput('')
     setThinking(true)
-    voiceQuery(q)
+    voiceQuery(q, (() => { try { return localStorage.getItem('sb-call-lang') || 'en' } catch { return 'en' } })())
       .then((d) => { setThinking(false); typeOut(d.answer || answerQuery(q, fleet)) })
       .catch(() => { setThinking(false); typeOut(answerQuery(q, fleet)) })
   }
