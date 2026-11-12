@@ -25,7 +25,10 @@ def configure_logging():
         datefmt="%H:%M:%S",
     )
     # httpx logs a line per request, which is pure noise against a 2s feed.
-    for noisy in ("httpx", "httpcore", "apscheduler.executors.default"):
+    # twilio.http_client dumps full request/response headers per call; silence it
+    # so the console stays readable (Twilio is disabled in notify_alert anyway).
+    for noisy in ("httpx", "httpcore", "apscheduler.executors.default",
+                  "twilio.http_client", "twilio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 @asynccontextmanager

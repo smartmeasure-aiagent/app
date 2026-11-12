@@ -10,7 +10,9 @@
 // is not running. Anything only the agent can answer uses AGENT_BASE and degrades
 // to the local simulation on failure.
 export const API_BASE = (import.meta.env.VITE_API_BASE || 'http://37.27.53.14:8031').replace(/\/$/, '')
-export const AGENT_BASE = (import.meta.env.VITE_AGENT_BASE || 'http://37.27.53.14:8032').replace(/\/$/, '')
+// Agent reached over HTTPS via its Cloudflare subdomain so the dashboard can be
+// served over HTTPS, which Chrome requires before granting microphone access.
+export const AGENT_BASE = (import.meta.env.VITE_AGENT_BASE || 'https://smartgcbe.coarchitive.com').replace(/\/$/, '')
 
 const withTimeout = (ms, promise) =>
   Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])

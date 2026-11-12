@@ -7,8 +7,10 @@ export default defineConfig({
   // so no server-side base path is needed.
   base: './',
   plugins: [react()],
-  server: { open: true, port: 5173 },
+  // allowedHosts trusts the Cloudflare tunnel subdomain this app is served from;
+  // without it Vite rejects requests whose Host header is the public domain.
+  server: { open: true, port: 5173, allowedHosts: ['smartgcfe.coarchitive.com'] },
   // `npm start` (vite preview) serves the built dist/ — bind to all interfaces
   // so it is reachable on the server's public IP (e.g. behind PM2).
-  preview: { host: true, port: 3031 },
+  preview: { host: true, port: 3031, allowedHosts: ['smartgcfe.coarchitive.com'] },
 })
