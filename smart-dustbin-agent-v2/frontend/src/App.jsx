@@ -32,11 +32,12 @@ const SCREENS = {
 }
 
 function getInitialTheme() {
+  // Default to light mode. A saved choice still wins, so toggling to dark sticks.
   try {
     const st = localStorage.getItem('fv-theme')
     if (st) return st
   } catch (e) { /* ignore */ }
-  return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light'
+  return 'light'
 }
 
 function Shell() {
